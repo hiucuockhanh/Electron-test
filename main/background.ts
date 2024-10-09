@@ -10,6 +10,7 @@ const AUTH_PORT = 42813;
 let mainWindow;
 const isProd = process.env.NODE_ENV === "production";
 
+// Đăng ký giao thức deep link cho cả macOS và Windows
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
     app.setAsDefaultProtocolClient("ahihi", process.execPath, [
@@ -20,6 +21,11 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient("ahihi");
 }
 
+if (process.platform === "win32") {
+  app.setAsDefaultProtocolClient("ahihi");
+}
+
+// Xử lý để đảm bảo ứng dụng chỉ có một instance
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
@@ -31,10 +37,23 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
 
-    dialog.showErrorBox(
-      "Welcome Back",
-      `You arrived from: ${commandLine.pop().slice(0, -1)}`
-    );
+    // Tìm URL deep link trong commandLine trên Windows
+    const url = commandLine.find((arg) => arg.startsWith("ahihi://"));
+
+    if (url) {
+      const screen = new URL(url).searchParams.get("screen");
+      console.log("Deep link URL received on second instance:", url); // Debugging
+
+      if (screen === "next") {
+        if (isProd) {
+          mainWindow.loadURL("app://./next");
+        } else {
+          mainWindow.loadURL(`http://localhost:${process.argv[2]}/next`);
+        }
+      } else {
+        dialog.showErrorBox("Error", `URI: ${url}`);
+      }
+    }
   });
 
   app.whenReady().then(() => {
@@ -43,6 +62,8 @@ if (!gotTheLock) {
 
   app.on("open-url", (event, url) => {
     event.preventDefault();
+
+    console.log("Deep link URL received:", url); // Debugging
 
     // Kiểm tra và khởi tạo lại mainWindow nếu cần thiết
     if (!mainWindow) {
@@ -73,12 +94,14 @@ if (!gotTheLock) {
   });
 }
 
+// Serve app trong môi trường production và development
 if (isProd) {
   serve({ directory: "app" });
 } else {
   app.setPath("userData", `${app.getPath("userData")} (development)`);
 }
 
+// OAuth server cho authentication
 oauthServer.get("/", async (req, res) => {
   try {
     const deepLinkUrl = `ahihi://?screen=next`;
@@ -119,13 +142,14 @@ oauthServer.get("/", async (req, res) => {
   }
 });
 
+// Tạo OAuth server
 const server = createServer(oauthServer);
 server.listen(AUTH_PORT, () => {
   console.log(`OAuth server is running on http://localhost:${AUTH_PORT}`);
 });
 
+// Hàm tạo cửa sổ mainWindow
 async function createWindows() {
-  // Khởi tạo mainWindow tại đây
   mainWindow = createWindow("main", {
     width: 1000,
     height: 600,
@@ -143,10 +167,12 @@ async function createWindows() {
   }
 }
 
+// Xử lý khi tất cả cửa sổ bị đóng
 app.on("window-all-closed", () => {
   app.quit();
 });
 
+// IPC handlers
 ipcMain.on("shell:huhu", () => {
   const pagePath = "http://localhost:42813/";
   shell.openExternal(pagePath);
